@@ -23,6 +23,13 @@ All notable changes to this project are documented here. Versions follow
   seeded random-traffic suite that asserts the sliding-window invariant against
   an independent oracle.
 
+### Added
+
+- Concurrency suite (`concurrency.test.ts`): synchronous and async storms
+  proving a key is admitted exactly `limit`/`capacity` times under the heaviest
+  interleaving the runtime permits, that no decision observes torn counters,
+  and that window advance frees keys without leaking state.
+
 ### Removed
 
 - Developer console and HTTP server. Part 1 of the assessment targets a pure

@@ -147,6 +147,19 @@ That is:
 There is deliberately no global lock and no transaction spanning keys —
 nothing above the store needs one.
 
+### Concurrency test
+
+`concurrency.test.ts` pins the contract under the heaviest interleaving the
+runtime permits: a frozen-clock synchronous storm (500 callers at one instant)
+and a 200-caller async storm scheduled as independent microtasks. Both assert a
+key is admitted exactly `limit`/`capacity` times, the rest reject, and no
+decision ever observes `remaining` outside `[0, limit]`. A third test proves a
+full-window advance frees the key and leaves no residual state. The point of
+these tests in a single-threaded runtime is the guarantee they encode: because
+`consume()` is synchronous, the per-key read-modify-write is atomic, and the
+multi-process case is handled by keeping that same atomicity behind the store
+interface (one `EVAL` per call on Redis).
+
 ### Redis mapping
 
 | Operation | Redis |
