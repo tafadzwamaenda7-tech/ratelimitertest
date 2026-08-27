@@ -1,0 +1,13 @@
+node_modules/
+dist/
+*.tsbuildinfo
+node_modules/.tmp/
+
+# local runtime/log artifacts
+*.log
+.env
+.env.local
+
+# OS cruft
+Thumbs.db
+.DS_Store
