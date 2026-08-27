@@ -10,8 +10,7 @@ deployment without a rewrite.
 A rate limiter sits in front of an operation with a cost budget — an API, a
 queue, a notification gateway. It answers one question per incoming request:
 
-> Should this client be allowed to proceed right now, and if not, when may it
-> try again?
+> Should this client be allowed to proceed right now?
 
 The two requirements that shape everything else:
 
@@ -79,21 +78,22 @@ boring:
 ```ts
 interface RateLimiter {
   consume(key: string): RateLimitConsumption // allowed, remaining, resetAtMs, retryAfterMs
-  trackedKeys(): string[]
+  trackedKeys(): number
   cleanupIdle(idleMs: number): number
 }
 ```
 
-`resetAtMs` / `retryAfterMs` are derived from state the policy already holds —
-no extra clocks, no bookkeeping — and map directly to `Retry-After`. When
-allowed, `retryAfterMs` is `0` and `resetAtMs` is the oldest live timestamp's
-expiry (sliding) or the next refill instant (bucket), so dashboards can show a
-real "refills at" rather than a guess.
+`allow(key)` is a one-line convenience over `consume()`. `resetAtMs` /
+`retryAfterMs` are derived from state the policy already holds — no extra
+clocks, no bookkeeping — and map directly to `Retry-After`. When allowed,
+`retryAfterMs` is `0` and `resetAtMs` is the oldest live timestamp's expiry
+(sliding) or the next refill instant (bucket), so dashboards can show a real
+"refills at" rather than a guess.
 
 ## 4. Storage seam
 
 Per-key read-modify-write is the only mutation. It is isolated behind a tiny
-interface so the "browser in-memory" and "production Redis" versions share the
+interface so the "in-memory here" and "production Redis" versions share the
 entire decision layer:
 
 - `WindowStore.admit(key, now, cutoff, limit) → { allowed, remaining, oldest }`
@@ -119,8 +119,8 @@ debugging. Nothing in the hot path iterates keys.
 
 ## 6. Time
 
-`Clock` is a two-method interface, `now()` and `t()` (epoch ms). Every limiter
-takes one, defaulting to `SystemClock`. Tests inject `MockClock` and step time
+`Clock` is a one-method interface, `now()` (epoch ms). Every limiter takes
+one, defaulting to `SystemClock`. Tests inject `MockClock` and step time
 explicitly:
 
 - advance the mock, request, assert — no timers, deterministic, CI-friendly.
@@ -135,12 +135,13 @@ source) should inject one and accept the trade-off.
 In Node.js a synchronous `consume()` can't be preempted, so the Map
 implementation is correct by construction for a single process.
 
-The store interface is the contract this correctness rests on, and the
-interface note makes it explicit. Behind the interface the load-bearing
-requirement is: **each call is atomic per key.** That is:
+The store interface is the contract this correctness rests on. Behind the
+interface the load-bearing requirement is: **each call is atomic per key.**
+That is:
 
 - in-memory: the `Map` method is a single synchronous operation;
-- multi-threaded: `ConcurrentHashMap.compute(key, …)` or the equivalent;
+- multi-threaded (e.g. a Java port): `ConcurrentHashMap.compute(key, …)` or
+  the equivalent;
 - distributed (Redis): one `EVAL` per call.
 
 There is deliberately no global lock and no transaction spanning keys —
@@ -155,8 +156,7 @@ nothing above the store needs one.
 | Bucket consume | `GET`/`SET` of `{tokens, lastRefill}` stringified — one Lua script |
 
 Keys expire via `EXPIRE` on any store touch, sized to `windowMs` + margin, so
-idle keys disappear without a sweeper. The browser demo substitutes
-`cleanupIdle` for expiration because `Map` holds no per-entry TTL.
+idle keys disappear without a sweeper.
 
 ## 8. Errors
 
@@ -176,16 +176,15 @@ Two layers.
    rejection-not-recorded, bucket refill rounding and Retry-After `ceil`,
    config rejection. All driven by `MockClock`.
 2. **Random-traffic invariant suite** — a seeded PRNG (mulberry32) generates a
-   schedule of requests from several clients with pauses. A naive oracle independently
+   schedule of requests from several clients with pauses. A naive oracle
    recomputes each key's live window at every event, and the test asserts the
    limiter's decisions never admit beyond the oracle's limit in *any* 60s
-   window. The seed makes the run reproducible; the same harness also asserts
-   token-bucket "never minted above capacity + elapsed refill."
+   window. The seed makes the suite reproducible; the same harness also
+   asserts token-bucket "never minted above capacity + elapsed refill."
 
 The suite is deterministic: same commit, same pass/fail, CI included. The
-demo app guards against regressions in the consumer contract by driving the
-real exported API (`createRateLimiter`, `consume`, `historyOf`), not internal
-classes.
+tests drive the public API (`createRateLimiter`, `allow`, `consume`), never
+internal classes, so a refactor can't silently break the contract.
 
 ## 10. Monitoring
 
@@ -200,12 +199,8 @@ are the three metrics to graph. Nothing extra to add in the hot path.
 
 ## 11. Shipping boundary
 
-This repo pins the *decision layer* and a faithful browser demo. The runtime
-that matters — an Express/Fastify middleware calling `consume()` with
-`req.ip` or a signed user id as the key, `429` + `Retry-After` on rejection,
-wired to the Redis store — reuses the core unchanged. That middleware is a
-~40-line file, which is why it's documented here instead of landed in an
-unrunnable endpoint.
-
-The demo's Notes section and `README.md` surface the same information for the
-browser, without duplicating it.
+This repo pins the *decision layer* only. The runtime that matters — a
+middleware calling `consume()` with `req.ip` or a signed user id as the key,
+`429` + `Retry-After` on rejection, wired to the Redis store — reuses the
+core unchanged. That middleware is a few dozen lines and lives out of tree so
+the assessment deliverable stays a pure library, as specified.

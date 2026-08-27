@@ -23,15 +23,11 @@ All notable changes to this project are documented here. Versions follow
   seeded random-traffic suite that asserts the sliding-window invariant against
   an independent oracle.
 
-### Added
+### Removed
 
-- Real HTTP backend (`server/`) that runs every `/api/v1/notify` decision
-  through the shared library and answers `200` → `429` with
-  `x-ratelimit-*`/`Retry-After` headers, per-client-key isolation, configurable
-  policy via environment variables, and graceful shutdown. Backend covered by a
-  shared decision-layer suite and an end-to-end suite over a real socket.
-- Console app rebuilt around the new API with live window/bucket
-  visualization, throughput stats, per-request log, and an explainer section.
+- Developer console and HTTP server. Part 1 of the assessment targets a pure
+  software library with automated tests; no frontend or server is required, so
+  the demo code was stripped to keep the deliverable exactly on scope.
 
 ## [0.1.0] - 2026-08-27
 
@@ -39,5 +35,5 @@ All notable changes to this project are documented here. Versions follow
 
 - Initial sliding window log rate limiter with injectable `Clock`,
   in-memory key/value store, token bucket policy, and idle-key cleanup.
-- Vitest suite (24 tests) driven by `MockClock`.
-- Minimal React demo UI and oxlint/Vite/TypeScript toolchain.
+- Vitest suite driven by `MockClock`.
+- TypeScript + Vitest + oxlint toolchain.
